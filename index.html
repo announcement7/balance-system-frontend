@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SwiftLoan Wallet Dashboard</title>
+
+  <!-- Meta + Progressive Enhancements -->
+  <meta name="description" content="SwiftLoan Wallet — Deposit and Track Your Transactions Instantly" />
+  <link rel="icon" href="https://swiftcapitalportal.onrender.com/favicon.ico" type="image/x-icon" />
+  <meta name="theme-color" content="#2196f3" />
+
+  <!-- Firebase SDKs -->
+  <script type="module">
+    // Firebase imports
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+    import { getFirestore, doc, getDoc, collection, query, where, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+
+    // ✅ Your Firebase Configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyAL7PDWjbQRNhG823U4yr6GUskglThfSc0",
+      authDomain: "swiftauth-ae9ee.firebaseapp.com",
+      projectId: "swiftauth-ae9ee",
+      storageBucket: "swiftauth-ae9ee.appspot.com",
+      messagingSenderId: "166613850855",
+      appId: "1:166613850855:web:4b80fc5e14857c841b6042",
+      measurementId: "G-WSWWZH8DT5"
+    };
+
+    // ✅ Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
+
+    const backendURL = "https://balancesystembackend.onrender.com";
+
+    // UI elements
+    const balanceDisplay = document.getElementById("balance");
+    const depositForm = document.getElementById("depositForm");
+    const depositStatus = document.getElementById("depositStatus");
+    const transactionsList = document.getElementById("transactionsList");
+    const userInfo = document.getElementById("userInfo");
+
+    // 🔑 Sign in user (anonymous or via Firebase Auth)
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        const userId = user.uid;
+        userInfo.innerHTML = `👤 User: <b>${userId}</b>`;
+        loadUserData(userId);
+      } else {
+        // auto anonymous login if no user
+        signInAnonymously(auth).catch((err) => {
+          console.error("Auth error:", err.message);
+        });
+      }
+    });
+
+    // 🔄 Load Realtime User Data
+    async function loadUserData(userId) {
+      const userRef = doc(db, "users", userId);
+      const q = query(collection(db, "deposits"), where("userId", "==", userId), orderBy("timestamp", "desc"));
+
+      // Realtime balance updates
+      onSnapshot(userRef, (snap) => {
+        const data = snap.data();
+        balanceDisplay.textContent = data?.balance ? "Ksh " + data.balance.toLocaleString() : "Ksh 0";
+      });
+
+      // Realtime transactions
+      onSnapshot(q, (snapshot) => {
+        transactionsList.innerHTML = "";
+        if (snapshot.empty) {
+          transactionsList.innerHTML = "<li>No transactions yet.</li>";
+          return;
+        }
+        snapshot.forEach((doc) => {
+          const d = doc.data();
+          const item = document.createElement("li");
+          item.innerHTML = `
+            <strong>${d.reference}</strong> — ${d.amount.toLocaleString()} Ksh 
+            <span class="status ${d.status}">${d.status}</span>
+            <div class="note">${d.note || ""}</div>
+            <small>${d.timestamp?.toDate ? d.timestamp.toDate().toLocaleString() : ""}</small>
+          `;
+          transactionsList.appendChild(item);
+        });
+      });
+
+      // 🪙 Handle deposits
+      depositForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const phone = document.getElementById("phone").value.trim();
+        const amount = parseInt(document.getElementById("amount").value.trim());
+
+        depositStatus.innerHTML = "⏳ Sending STK push...";
+        depositStatus.style.color = "orange";
+
+        try {
+          const res = await fetch(`${backendURL}/deposit`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId, phone, amount }),
+          });
+          const data = await res.json();
+
+          if (data.success) {
+            depositStatus.innerHTML = "📲 STK push sent. Complete payment on phone...";
+            depositStatus.style.color = "blue";
+          } else {
+            depositStatus.innerHTML = "❌ Deposit failed to start.";
+            depositStatus.style.color = "red";
+          }
+        } catch (err) {
+          console.error(err);
+          depositStatus.innerHTML = "⚠️ Network error. Try again.";
+          depositStatus.style.color = "red";
+        }
+      });
+    }
+  </script>
+
+  <!-- Styling -->
+  <style>
+    body {
+      font-family: "Poppins", sans-serif;
+      background: #f4f6f9;
+      margin: 0;
+      padding: 0;
+      color: #333;
+    }
+    header {
+      background: #2196f3;
+      color: white;
+      text-align: center;
+      padding: 15px 0;
+      font-size: 20px;
+      font-weight: bold;
+    }
+    main {
+      max-width: 480px;
+      margin: 20px auto;
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    #balance {
+      font-size: 32px;
+      color: #2196f3;
+      font-weight: bold;
+      text-align: center;
+      margin-bottom: 10px;
+    }
+    #userInfo {
+      text-align: center;
+      font-size: 13px;
+      color: #555;
+      margin-bottom: 20px;
+    }
+    form {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    input {
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      font-size: 16px;
+    }
+    button {
+      background: #2196f3;
+      color: white;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      cursor: pointer;
+      transition: 0.3s;
+    }
+    button:hover {
+      background: #1976d2;
+    }
+    #depositStatus {
+      text-align: center;
+      margin-top: 10px;
+      font-weight: bold;
+    }
+    ul {
+      list-style: none;
+      padding: 0;
+      margin-top: 20px;
+    }
+    li {
+      background: #fafafa;
+      padding: 10px;
+      border-radius: 8px;
+      margin-bottom: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .status {
+      float: right;
+      font-weight: bold;
+      text-transform: uppercase;
+    }
+    .status.success { color: green; }
+    .status.pending { color: orange; }
+    .status.failed, .status.cancelled, .status.timeout { color: red; }
+    .note { font-size: 13px; color: #666; margin-top: 4px; }
+  </style>
+</head>
+
+<body>
+  <header>💳 SwiftLoan Wallet</header>
+  <main>
+    <div id="balance">Ksh 0</div>
+    <div id="userInfo"></div>
+
+    <form id="depositForm">
+      <input type="tel" id="phone" placeholder="Enter phone (07...)" required />
+      <input type="number" id="amount" placeholder="Enter amount (Ksh)" required />
+      <button type="submit">Deposit Now</button>
+    </form>
+
+    <div id="depositStatus"></div>
+
+    <h3 style="margin-top: 30px;">🧾 Transaction History</h3>
+    <ul id="transactionsList"></ul>
+  </main>
+</body>
+  </html>
