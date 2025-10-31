@@ -1,292 +1,648 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SwiftLoan Wallet Dashboard</title>
-
-  <!-- META + Progressive Enhancements -->
-  <meta name="description" content="SwiftLoan Wallet — Deposit and Track Your Transactions Instantly" />
-  <link rel="icon" href="https://swiftcapitalportal.onrender.com/favicon.ico" type="image/x-icon" />
-  <meta name="theme-color" content="#2196f3" />
-
-  <!-- Firebase SDKs -->
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-    import { getFirestore, doc, collection, query, where, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
-    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
-
-    // ✅ Firebase Config
-    const firebaseConfig = {
-      apiKey: "AIzaSyAL7PDWjbQRNhG823U4yr6GUskglThfSc0",
-      authDomain: "swiftauth-ae9ee.firebaseapp.com",
-      projectId: "swiftauth-ae9ee",
-      storageBucket: "swiftauth-ae9ee.appspot.com",
-      messagingSenderId: "166613850855",
-      appId: "1:166613850855:web:4b80fc5e14857c841b6042",
-      measurementId: "G-WSWWZH8DT5"
-    };
-
-    // ✅ Initialize Firebase
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
-    const auth = getAuth(app);
-
-    const backendURL = "https://balancesystembackend.onrender.com";
-
-    // UI Elements
-    const balanceDisplay = document.getElementById("balance");
-    const depositForm = document.getElementById("depositForm");
-    const depositStatus = document.getElementById("depositStatus");
-    const transactionsList = document.getElementById("transactionsList");
-    const userInfo = document.getElementById("userInfo");
-    const toastContainer = document.getElementById("toastContainer");
-
-    // 🔑 Authentication
-    onAuthStateChanged(auth, (user) => {
-      if (user) {
-        const userId = user.uid;
-        userInfo.innerHTML = `👤 User: <b>${userId}</b>`;
-        loadUserData(userId);
-      } else {
-        signInAnonymously(auth).catch((err) => {
-          showToast("⚠️ Firebase login failed: " + err.message, "error");
-        });
-      }
-    });
-
-    // 🪙 Deposit Form
-    depositForm.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const user = auth.currentUser;
-      if (!user) return showToast("⚠️ Please wait — connecting...", "warn");
-
-      const userId = user.uid;
-      const phone = document.getElementById("phone").value.trim();
-      const amount = parseInt(document.getElementById("amount").value.trim());
-
-      if (!/^07\d{8}$/.test(phone))
-        return showToast("❌ Invalid phone number format.", "error");
-      if (!amount || amount < 10)
-        return showToast("❌ Minimum deposit is Ksh 10.", "error");
-
-      depositStatus.innerHTML = "⏳ Sending STK push...";
-      depositStatus.style.color = "orange";
-
-      try {
-        const res = await fetch(`${backendURL}/deposit`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId, phone, amount }),
-        });
-        const data = await res.json();
-
-        if (data.success) {
-          showToast("📲 STK push sent. Complete payment on your phone.", "info");
-          depositStatus.innerHTML = "✅ Awaiting payment confirmation...";
-          depositStatus.style.color = "blue";
-        } else {
-          showToast("❌ Deposit failed: " + (data.error || "Unknown error"), "error");
-          depositStatus.innerHTML = "❌ Deposit failed to start.";
-          depositStatus.style.color = "red";
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SwiftWallet - Deposit System</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
-      } catch (err) {
-        console.error("Deposit error:", err);
-        showToast("⚠️ Network error. Try again.", "error");
-        depositStatus.innerHTML = "⚠️ Network error.";
-        depositStatus.style.color = "red";
-      }
-    });
 
-    // 🔄 Load Realtime Firestore Data
-    async function loadUserData(userId) {
-      const userRef = doc(db, "users", userId);
-      const q = query(collection(db, "deposits"), where("userId", "==", userId), orderBy("timestamp", "desc"));
-
-      // Balance listener
-      onSnapshot(userRef, (snap) => {
-        const data = snap.data();
-        balanceDisplay.textContent = data?.balance
-          ? "Ksh " + data.balance.toLocaleString()
-          : "Ksh 0";
-      });
-
-      // Transaction listener
-      onSnapshot(q, (snapshot) => {
-        transactionsList.innerHTML = "";
-        if (snapshot.empty) {
-          transactionsList.innerHTML = "<li>No transactions yet.</li>";
-          return;
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%);
+            color: #ffffff;
+            min-height: 100vh;
+            padding: 20px;
         }
-        snapshot.forEach((doc) => {
-          const d = doc.data();
-          const item = document.createElement("li");
-          item.innerHTML = `
-            <strong>${d.reference}</strong> — ${d.amount.toLocaleString()} Ksh 
-            <span class="status ${d.status}">${d.status}</span>
-            <div class="note">${d.note || ""}</div>
-            <small>${d.timestamp?.toDate ? d.timestamp.toDate().toLocaleString() : ""}</small>
-          `;
-          transactionsList.appendChild(item);
-        });
-      });
-    }
 
-    // 🎯 Toast Notification System
-    function showToast(message, type = "info") {
-      const toast = document.createElement("div");
-      toast.className = `toast ${type}`;
-      toast.textContent = message;
-      toastContainer.appendChild(toast);
-      setTimeout(() => {
-        toast.classList.add("show");
-        setTimeout(() => {
-          toast.classList.remove("show");
-          setTimeout(() => toast.remove(), 300);
-        }, 4000);
-      }, 100);
-    }
-  </script>
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
 
-  <!-- 🎨 Styles -->
-  <style>
-    body {
-      font-family: "Poppins", sans-serif;
-      background: #f4f6f9;
-      margin: 0;
-      padding: 0;
-      color: #333;
-    }
-    header {
-      background: #2196f3;
-      color: white;
-      text-align: center;
-      padding: 15px 0;
-      font-size: 20px;
-      font-weight: bold;
-    }
-    main {
-      max-width: 480px;
-      margin: 20px auto;
-      background: white;
-      padding: 20px;
-      border-radius: 12px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    }
-    #balance {
-      font-size: 32px;
-      color: #2196f3;
-      font-weight: bold;
-      text-align: center;
-      margin-bottom: 10px;
-    }
-    #userInfo {
-      text-align: center;
-      font-size: 13px;
-      color: #555;
-      margin-bottom: 20px;
-    }
-    form {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    input {
-      padding: 10px;
-      border-radius: 8px;
-      border: 1px solid #ccc;
-      font-size: 16px;
-    }
-    button {
-      background: #2196f3;
-      color: white;
-      padding: 12px;
-      border: none;
-      border-radius: 8px;
-      font-size: 16px;
-      cursor: pointer;
-      transition: 0.3s;
-    }
-    button:hover {
-      background: #1976d2;
-    }
-    #depositStatus {
-      text-align: center;
-      margin-top: 10px;
-      font-weight: bold;
-    }
-    ul {
-      list-style: none;
-      padding: 0;
-      margin-top: 20px;
-    }
-    li {
-      background: #fafafa;
-      padding: 10px;
-      border-radius: 8px;
-      margin-bottom: 8px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-    }
-    .status {
-      float: right;
-      font-weight: bold;
-      text-transform: uppercase;
-    }
-    .status.success { color: green; }
-    .status.pending { color: orange; }
-    .status.failed, .status.cancelled, .status.timeout { color: red; }
-    .note { font-size: 13px; color: #666; margin-top: 4px; }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 20px;
+        }
 
-    /* 🎉 Toast Styles */
-    #toastContainer {
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      z-index: 1000;
-    }
-    .toast {
-      background: #333;
-      color: #fff;
-      padding: 12px 18px;
-      border-radius: 8px;
-      font-size: 14px;
-      opacity: 0;
-      transform: translateY(10px);
-      transition: all 0.3s ease;
-      min-width: 240px;
-    }
-    .toast.show {
-      opacity: 1;
-      transform: translateY(0);
-    }
-    .toast.info { background: #2196f3; }
-    .toast.error { background: #f44336; }
-    .toast.warn { background: #ff9800; }
-    .toast.success { background: #4caf50; }
-  </style>
+        .header h1 {
+            font-size: 3em;
+            background: linear-gradient(90deg, #00ff88, #00ddff, #ff00ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 30px rgba(0, 255, 136, 0.5);
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #00ddff;
+            font-size: 1.2em;
+            text-shadow: 0 0 10px rgba(0, 221, 255, 0.5);
+        }
+
+        .user-info {
+            text-align: center;
+            color: #00ff88;
+            margin-bottom: 20px;
+            font-size: 0.9em;
+            padding: 10px;
+            background: rgba(0, 255, 136, 0.1);
+            border-radius: 10px;
+            border: 1px solid rgba(0, 255, 136, 0.3);
+        }
+
+        .balance-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid #00ff88;
+            border-radius: 20px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 0 30px rgba(0, 255, 136, 0.3);
+            text-align: center;
+            position: relative;
+        }
+
+        .live-indicator {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #00ff88;
+            font-size: 0.85em;
+        }
+
+        .live-dot {
+            width: 10px;
+            height: 10px;
+            background: #00ff88;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .balance-label {
+            color: #00ddff;
+            font-size: 1em;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .balance-amount {
+            font-size: 3.5em;
+            font-weight: bold;
+            color: #00ff88;
+            text-shadow: 0 0 20px rgba(0, 255, 136, 0.8);
+        }
+
+        .deposit-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid #ff00ff;
+            border-radius: 20px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 0 30px rgba(255, 0, 255, 0.3);
+        }
+
+        .deposit-card h2 {
+            color: #ff00ff;
+            margin-bottom: 25px;
+            font-size: 1.8em;
+            text-shadow: 0 0 15px rgba(255, 0, 255, 0.5);
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #00ddff;
+            font-weight: 600;
+            font-size: 1em;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.4);
+            border: 2px solid #00ddff;
+            border-radius: 10px;
+            color: #ffffff;
+            font-size: 1em;
+            transition: all 0.3s ease;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #00ff88;
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.4);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 18px;
+            font-size: 1.2em;
+            font-weight: bold;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .btn-deposit {
+            background: linear-gradient(135deg, #00ff88, #00ddff);
+            color: #000;
+            box-shadow: 0 0 30px rgba(0, 255, 136, 0.5);
+        }
+
+        .btn-deposit:hover:not(:disabled) {
+            transform: translateY(-3px);
+            box-shadow: 0 0 50px rgba(0, 255, 136, 0.8);
+        }
+
+        .btn-deposit:disabled {
+            background: #555;
+            cursor: not-allowed;
+            box-shadow: none;
+            opacity: 0.6;
+        }
+
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            max-width: 400px;
+        }
+
+        .toast {
+            background: rgba(0, 0, 0, 0.9);
+            border-radius: 10px;
+            padding: 15px 20px;
+            margin-bottom: 10px;
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
+            border: 2px solid;
+            animation: slideIn 0.3s ease;
+        }
+
+        .toast-success {
+            border-color: #00ff88;
+            color: #00ff88;
+        }
+
+        .toast-error {
+            border-color: #ff0088;
+            color: #ff0088;
+        }
+
+        .toast-warn {
+            border-color: #ffbb00;
+            color: #ffbb00;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .transactions-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid #00ddff;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 0 30px rgba(0, 221, 255, 0.3);
+        }
+
+        .transactions-card h2 {
+            color: #00ddff;
+            margin-bottom: 25px;
+            font-size: 1.8em;
+            text-shadow: 0 0 15px rgba(0, 221, 255, 0.5);
+        }
+
+        .transaction-item {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+            transition: all 0.3s ease;
+        }
+
+        .transaction-item:hover {
+            transform: translateX(5px);
+            border-color: #00ff88;
+            box-shadow: 0 0 15px rgba(0, 255, 136, 0.3);
+        }
+
+        .transaction-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+
+        .transaction-amount {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #00ff88;
+        }
+
+        .transaction-status {
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: bold;
+        }
+
+        .status-success {
+            background: #00ff88;
+            color: #000;
+        }
+
+        .status-pending {
+            background: #ffbb00;
+            color: #000;
+        }
+
+        .status-failed, .status-error {
+            background: #ff0088;
+            color: #fff;
+        }
+
+        .status-cancelled {
+            background: #888;
+            color: #fff;
+        }
+
+        .status-timeout, .status-insufficient_balance {
+            background: #ff6600;
+            color: #fff;
+        }
+
+        .transaction-details {
+            color: #aaa;
+            font-size: 0.9em;
+        }
+
+        .transaction-note {
+            margin-top: 8px;
+            color: #00ddff;
+            font-size: 0.9em;
+        }
+
+        .no-transactions {
+            text-align: center;
+            color: #666;
+            padding: 40px;
+            font-size: 1.1em;
+        }
+
+        .loading {
+            text-align: center;
+            color: #00ddff;
+            padding: 20px;
+        }
+
+        .spinner {
+            border: 3px solid rgba(0, 221, 255, 0.3);
+            border-top: 3px solid #00ddff;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .quick-amounts {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .quick-amount-btn {
+            padding: 12px;
+            background: rgba(0, 221, 255, 0.1);
+            border: 2px solid #00ddff;
+            border-radius: 8px;
+            color: #00ddff;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .quick-amount-btn:hover {
+            background: rgba(0, 221, 255, 0.3);
+            transform: scale(1.05);
+            box-shadow: 0 0 15px rgba(0, 221, 255, 0.5);
+        }
+
+        @media (max-width: 600px) {
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .balance-amount {
+                font-size: 2.5em;
+            }
+            
+            .quick-amounts {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .toast-container {
+                left: 20px;
+                right: 20px;
+                max-width: none;
+            }
+        }
+    </style>
 </head>
-
 <body>
-  <header>💳 SwiftLoan Wallet</header>
-  <main>
-    <div id="balance">Ksh 0</div>
-    <div id="userInfo">Connecting...</div>
+    <div class="container">
+        <div class="header">
+            <h1>💎 SwiftWallet</h1>
+            <p>Fast & Secure M-Pesa Deposits</p>
+        </div>
 
-    <form id="depositForm">
-      <input type="tel" id="phone" placeholder="Enter phone (07...)" required />
-      <input type="number" id="amount" placeholder="Enter amount (Ksh)" required />
-      <button type="submit">Deposit Now</button>
-    </form>
+        <div id="userInfo" class="user-info">
+            <div class="spinner"></div>
+            Connecting to Firebase...
+        </div>
 
-    <div id="depositStatus"></div>
+        <div class="balance-card">
+            <div class="live-indicator">
+                <div class="live-dot"></div>
+                <span>LIVE</span>
+            </div>
+            <div class="balance-label">Your Balance</div>
+            <div class="balance-amount" id="balance">KSH 0</div>
+        </div>
 
-    <h3 style="margin-top: 30px;">🧾 Transaction History</h3>
-    <ul id="transactionsList"></ul>
-  </main>
+        <div class="deposit-card">
+            <h2>🚀 Make a Deposit</h2>
+            
+            <form id="depositForm">
+                <div class="form-group">
+                    <label>M-Pesa Phone Number</label>
+                    <input type="tel" id="phone" placeholder="0712345678 or 254712345678" required>
+                </div>
 
-  <div id="toastContainer"></div>
+                <div class="form-group">
+                    <label>Quick Amounts</label>
+                    <div class="quick-amounts">
+                        <button type="button" class="quick-amount-btn" onclick="setAmount(10)">KSH 10</button>
+                        <button type="button" class="quick-amount-btn" onclick="setAmount(50)">KSH 50</button>
+                        <button type="button" class="quick-amount-btn" onclick="setAmount(100)">KSH 100</button>
+                        <button type="button" class="quick-amount-btn" onclick="setAmount(500)">KSH 500</button>
+                        <button type="button" class="quick-amount-btn" onclick="setAmount(1000)">KSH 1,000</button>
+                        <button type="button" class="quick-amount-btn" onclick="setAmount(5000)">KSH 5,000</button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Amount (KSH)</label>
+                    <input type="number" id="amount" placeholder="Enter amount (min. 10)" min="10" required>
+                </div>
+
+                <button type="submit" class="btn btn-deposit" id="depositBtn">
+                    Deposit Now
+                </button>
+            </form>
+        </div>
+
+        <div class="transactions-card">
+            <h2>📊 Recent Transactions</h2>
+            <div id="transactionsList">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    Loading transactions...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toastContainer" class="toast-container"></div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+        import { getFirestore, doc, collection, query, where, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAL7PDWjbQRNhG823U4yr6GUskglThfSc0",
+            authDomain: "swiftauth-ae9ee.firebaseapp.com",
+            projectId: "swiftauth-ae9ee",
+            storageBucket: "swiftauth-ae9ee.appspot.com",
+            messagingSenderId: "166613850855",
+            appId: "1:166613850855:web:4b80fc5e14857c841b6042",
+            measurementId: "G-WSWWZH8DT5"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        const backendURL = "https://balancesystembackend.onrender.com";
+
+        const balanceDisplay = document.getElementById("balance");
+        const depositForm = document.getElementById("depositForm");
+        const transactionsList = document.getElementById("transactionsList");
+        const userInfo = document.getElementById("userInfo");
+        const toastContainer = document.getElementById("toastContainer");
+        const depositBtn = document.getElementById("depositBtn");
+
+        let currentUserId = null;
+        let unsubscribeUser = null;
+        let unsubscribeDeposits = null;
+
+        function showToast(message, type = "success") {
+            const toast = document.createElement("div");
+            toast.className = `toast toast-${type}`;
+            toast.textContent = message;
+            toastContainer.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.animation = "slideOut 0.3s ease";
+                setTimeout(() => toast.remove(), 300);
+            }, 5000);
+        }
+
+        window.setAmount = function(amount) {
+            document.getElementById('amount').value = amount;
+        };
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                currentUserId = user.uid;
+                userInfo.innerHTML = `👤 User ID: <b>${user.uid.substring(0, 12)}...</b>`;
+                loadUserData(user.uid);
+            } else {
+                signInAnonymously(auth).catch((err) => {
+                    showToast("⚠️ Firebase login failed: " + err.message, "error");
+                    userInfo.textContent = "⚠️ Connection failed. Refresh page.";
+                });
+            }
+        });
+
+        function loadUserData(userId) {
+            if (unsubscribeUser) unsubscribeUser();
+            if (unsubscribeDeposits) unsubscribeDeposits();
+
+            const userRef = doc(db, "users", userId);
+            unsubscribeUser = onSnapshot(userRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    const balance = data.balance || 0;
+                    balanceDisplay.textContent = `KSH ${balance.toLocaleString()}`;
+                } else {
+                    balanceDisplay.textContent = "KSH 0";
+                }
+            }, (error) => {
+                console.error("Error listening to balance:", error);
+                showToast("⚠️ Balance sync error", "warn");
+            });
+
+            const depositsQuery = query(
+                collection(db, "deposits"),
+                where("userId", "==", userId),
+                orderBy("timestamp", "desc")
+            );
+
+            unsubscribeDeposits = onSnapshot(depositsQuery, (snapshot) => {
+                if (snapshot.empty) {
+                    transactionsList.innerHTML = '<div class="no-transactions">No transactions yet</div>';
+                    return;
+                }
+
+                const transactions = snapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+
+                displayTransactions(transactions);
+            }, (error) => {
+                console.error("Error listening to transactions:", error);
+                transactionsList.innerHTML = '<div class="no-transactions">Failed to load transactions</div>';
+            });
+        }
+
+        function displayTransactions(transactions) {
+            if (!transactions || transactions.length === 0) {
+                transactionsList.innerHTML = '<div class="no-transactions">No transactions yet</div>';
+                return;
+            }
+
+            transactionsList.innerHTML = transactions.map(tx => {
+                const date = tx.createdAt ? new Date(tx.createdAt).toLocaleString() : 
+                             tx.timestamp?.toDate ? tx.timestamp.toDate().toLocaleString() : 'N/A';
+                
+                return `
+                    <div class="transaction-item">
+                        <div class="transaction-header">
+                            <div class="transaction-amount">KSH ${(tx.amount || 0).toLocaleString()}</div>
+                            <div class="transaction-status status-${tx.status}">${tx.status.toUpperCase()}</div>
+                        </div>
+                        <div class="transaction-details">
+                            <div>📱 ${tx.phone || 'N/A'}</div>
+                            <div>🆔 ${tx.reference || 'N/A'}</div>
+                            ${tx.mpesaReceiptNumber ? `<div>📄 ${tx.mpesaReceiptNumber}</div>` : ''}
+                            <div>🕒 ${date}</div>
+                        </div>
+                        ${tx.note ? `<div class="transaction-note">${tx.note}</div>` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        depositForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
+
+            if (!currentUserId) {
+                showToast("⚠️ Please wait — connecting...", "warn");
+                return;
+            }
+
+            const phone = document.getElementById("phone").value.trim();
+            const amount = document.getElementById("amount").value;
+
+            if (!phone) {
+                showToast("❌ Please enter your phone number", "error");
+                return;
+            }
+
+            if (!amount || amount < 10) {
+                showToast("❌ Minimum deposit is KSH 10", "error");
+                return;
+            }
+
+            depositBtn.disabled = true;
+            depositBtn.textContent = "Processing...";
+
+            try {
+                const response = await fetch(`${backendURL}/deposit`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        userId: currentUserId,
+                        phone: phone,
+                        amount: parseFloat(amount)
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showToast(`✅ ${data.message}`, "success");
+                    document.getElementById("amount").value = '';
+                    document.getElementById("phone").value = '';
+                } else {
+                    showToast(`❌ ${data.error || 'Deposit failed to start'}`, "error");
+                    if (data.details) {
+                        console.error('Error details:', data.details);
+                    }
+                }
+            } catch (error) {
+                console.error('Network error:', error);
+                showToast('❌ Network error. Please check your connection.', "error");
+            } finally {
+                depositBtn.disabled = false;
+                depositBtn.textContent = 'Deposit Now';
+            }
+        });
+
+        window.addEventListener('beforeunload', () => {
+            if (unsubscribeUser) unsubscribeUser();
+            if (unsubscribeDeposits) unsubscribeDeposits();
+        });
+    </script>
 </body>
 </html>
