@@ -5,19 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SwiftLoan Wallet Dashboard</title>
 
-  <!-- Meta + Progressive Enhancements -->
+  <!-- META + Progressive Enhancements -->
   <meta name="description" content="SwiftLoan Wallet — Deposit and Track Your Transactions Instantly" />
   <link rel="icon" href="https://swiftcapitalportal.onrender.com/favicon.ico" type="image/x-icon" />
   <meta name="theme-color" content="#2196f3" />
 
   <!-- Firebase SDKs -->
   <script type="module">
-    // Firebase imports
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-    import { getFirestore, doc, getDoc, collection, query, where, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+    import { getFirestore, doc, collection, query, where, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
 
-    // ✅ Your Firebase Configuration
+    // ✅ Firebase Config
     const firebaseConfig = {
       apiKey: "AIzaSyAL7PDWjbQRNhG823U4yr6GUskglThfSc0",
       authDomain: "swiftauth-ae9ee.firebaseapp.com",
@@ -35,39 +34,84 @@
 
     const backendURL = "https://balancesystembackend.onrender.com";
 
-    // UI elements
+    // UI Elements
     const balanceDisplay = document.getElementById("balance");
     const depositForm = document.getElementById("depositForm");
     const depositStatus = document.getElementById("depositStatus");
     const transactionsList = document.getElementById("transactionsList");
     const userInfo = document.getElementById("userInfo");
+    const toastContainer = document.getElementById("toastContainer");
 
-    // 🔑 Sign in user (anonymous or via Firebase Auth)
+    // 🔑 Authentication
     onAuthStateChanged(auth, (user) => {
       if (user) {
         const userId = user.uid;
         userInfo.innerHTML = `👤 User: <b>${userId}</b>`;
         loadUserData(userId);
       } else {
-        // auto anonymous login if no user
         signInAnonymously(auth).catch((err) => {
-          console.error("Auth error:", err.message);
+          showToast("⚠️ Firebase login failed: " + err.message, "error");
         });
       }
     });
 
-    // 🔄 Load Realtime User Data
+    // 🪙 Deposit Form
+    depositForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const user = auth.currentUser;
+      if (!user) return showToast("⚠️ Please wait — connecting...", "warn");
+
+      const userId = user.uid;
+      const phone = document.getElementById("phone").value.trim();
+      const amount = parseInt(document.getElementById("amount").value.trim());
+
+      if (!/^07\d{8}$/.test(phone))
+        return showToast("❌ Invalid phone number format.", "error");
+      if (!amount || amount < 10)
+        return showToast("❌ Minimum deposit is Ksh 10.", "error");
+
+      depositStatus.innerHTML = "⏳ Sending STK push...";
+      depositStatus.style.color = "orange";
+
+      try {
+        const res = await fetch(`${backendURL}/deposit`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId, phone, amount }),
+        });
+        const data = await res.json();
+
+        if (data.success) {
+          showToast("📲 STK push sent. Complete payment on your phone.", "info");
+          depositStatus.innerHTML = "✅ Awaiting payment confirmation...";
+          depositStatus.style.color = "blue";
+        } else {
+          showToast("❌ Deposit failed: " + (data.error || "Unknown error"), "error");
+          depositStatus.innerHTML = "❌ Deposit failed to start.";
+          depositStatus.style.color = "red";
+        }
+      } catch (err) {
+        console.error("Deposit error:", err);
+        showToast("⚠️ Network error. Try again.", "error");
+        depositStatus.innerHTML = "⚠️ Network error.";
+        depositStatus.style.color = "red";
+      }
+    });
+
+    // 🔄 Load Realtime Firestore Data
     async function loadUserData(userId) {
       const userRef = doc(db, "users", userId);
       const q = query(collection(db, "deposits"), where("userId", "==", userId), orderBy("timestamp", "desc"));
 
-      // Realtime balance updates
+      // Balance listener
       onSnapshot(userRef, (snap) => {
         const data = snap.data();
-        balanceDisplay.textContent = data?.balance ? "Ksh " + data.balance.toLocaleString() : "Ksh 0";
+        balanceDisplay.textContent = data?.balance
+          ? "Ksh " + data.balance.toLocaleString()
+          : "Ksh 0";
       });
 
-      // Realtime transactions
+      // Transaction listener
       onSnapshot(q, (snapshot) => {
         transactionsList.innerHTML = "";
         if (snapshot.empty) {
@@ -86,41 +130,25 @@
           transactionsList.appendChild(item);
         });
       });
+    }
 
-      // 🪙 Handle deposits
-      depositForm.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const phone = document.getElementById("phone").value.trim();
-        const amount = parseInt(document.getElementById("amount").value.trim());
-
-        depositStatus.innerHTML = "⏳ Sending STK push...";
-        depositStatus.style.color = "orange";
-
-        try {
-          const res = await fetch(`${backendURL}/deposit`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ userId, phone, amount }),
-          });
-          const data = await res.json();
-
-          if (data.success) {
-            depositStatus.innerHTML = "📲 STK push sent. Complete payment on phone...";
-            depositStatus.style.color = "blue";
-          } else {
-            depositStatus.innerHTML = "❌ Deposit failed to start.";
-            depositStatus.style.color = "red";
-          }
-        } catch (err) {
-          console.error(err);
-          depositStatus.innerHTML = "⚠️ Network error. Try again.";
-          depositStatus.style.color = "red";
-        }
-      });
+    // 🎯 Toast Notification System
+    function showToast(message, type = "info") {
+      const toast = document.createElement("div");
+      toast.className = `toast ${type}`;
+      toast.textContent = message;
+      toastContainer.appendChild(toast);
+      setTimeout(() => {
+        toast.classList.add("show");
+        setTimeout(() => {
+          toast.classList.remove("show");
+          setTimeout(() => toast.remove(), 300);
+        }, 4000);
+      }, 100);
     }
   </script>
 
-  <!-- Styling -->
+  <!-- 🎨 Styles -->
   <style>
     body {
       font-family: "Poppins", sans-serif;
@@ -208,6 +236,36 @@
     .status.pending { color: orange; }
     .status.failed, .status.cancelled, .status.timeout { color: red; }
     .note { font-size: 13px; color: #666; margin-top: 4px; }
+
+    /* 🎉 Toast Styles */
+    #toastContainer {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 1000;
+    }
+    .toast {
+      background: #333;
+      color: #fff;
+      padding: 12px 18px;
+      border-radius: 8px;
+      font-size: 14px;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: all 0.3s ease;
+      min-width: 240px;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .toast.info { background: #2196f3; }
+    .toast.error { background: #f44336; }
+    .toast.warn { background: #ff9800; }
+    .toast.success { background: #4caf50; }
   </style>
 </head>
 
@@ -215,7 +273,7 @@
   <header>💳 SwiftLoan Wallet</header>
   <main>
     <div id="balance">Ksh 0</div>
-    <div id="userInfo"></div>
+    <div id="userInfo">Connecting...</div>
 
     <form id="depositForm">
       <input type="tel" id="phone" placeholder="Enter phone (07...)" required />
@@ -228,5 +286,7 @@
     <h3 style="margin-top: 30px;">🧾 Transaction History</h3>
     <ul id="transactionsList"></ul>
   </main>
+
+  <div id="toastContainer"></div>
 </body>
-  </html>
+</html>
